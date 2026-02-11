@@ -1,0 +1,24 @@
+{
+  "name": "click-ify",
+  "version": "1.0.0",
+  "description": "iPod-like media player",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nisesimadao/Click-ify.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/nisesimadao/Click-ify/issues"
+  },
+  "homepage": "https://github.com/nisesimadao/Click-ify#readme",
+  "dependencies": {
+    "@coooookies/windows-smtc-monitor": "^1.0.12",
+    "electron": "^28.0.0"
+  }
+}

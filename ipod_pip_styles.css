@@ -10,6 +10,7 @@
     overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     user-select: none;
+    border-radius: 15px;
 }
 
 .ipod-pip-body {
@@ -29,7 +30,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: space-between;
-    padding: 20px 15px 30px 15px;
+    padding: 15px 15px 20px 15px;
     box-sizing: border-box;
     position: relative;
     background:
@@ -44,7 +45,7 @@
 #ipod-pip-container .ipod-chassis.theme-black,
 #ipod-pip-container .ipod-chassis.theme-u2 {
     background:
-        url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1IiBoZWlnaHQ9IjUiPgo8cmVjdCB3aWR0aD0iNSIgaGVpZ2h0PSI1IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9IjAuMDMiLz4KPC9zdmc+'),
+        url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy5wMy5vcmcvMjAwMC9zdmciIHdpZHRoPSI1IiBoZWlnaHQ9IjUiPgo8cmVjdCB3aWR0aD0iNSIgaGVpZ2h0PSI1IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9IjAuMDMiLz4KPC9zdmc+'),
         linear-gradient(to right, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 10%, rgba(0,0,0,0.8) 50%, rgba(255,255,255,0.05) 90%, rgba(255,255,255,0.1) 100%),
         linear-gradient(to bottom, #1a1a1a 0%, #000000 100%);
 }
@@ -66,7 +67,7 @@
     background: #000;
     border-radius: 8px;
     padding: 2px;
-    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.3);
+    box-shadow: inset 0 0.1px 6px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.3);
     position: relative;
     margin-bottom: 20px;
     display: flex;
@@ -95,11 +96,11 @@
 
 
 .ipod-header {
-    height: 22px;
+    height: 18px;
     background: linear-gradient(to bottom, #c5cad4 0%, #9ca2ae 100%);
     border-bottom: 1px solid #7a808b;
     display: flex;
-    justify-content: space-between;
+    justify-content: space-between; /* 元に戻す */
     align-items: center;
     padding: 0 8px;
     color: #000;
@@ -336,7 +337,8 @@
 
 
 .ipod-lyrics-overlay {
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    position: absolute; top: 0;
+    left: 0; width: 100%; height: 100%;
     z-index: 100; display: none; flex-direction: column;
     overflow: hidden !important; background: #111;
 }
@@ -401,3 +403,79 @@
 .ipod-screen.lyrics-active .ipod-header { margin-top: -22px; opacity: 0; }
 .ipod-screen.lyrics-active .ipod-progress-area { margin-bottom: -40px; opacity: 0; }
 .ipod-screen.lyrics-active .ipod-lyrics-header-bar { top: 0; padding-top: 25px; }
+
+/* 新しい title-bar のスタイル */
+.title-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 30px; /* 適当な高さ */
+    -webkit-app-region: drag;
+    display: flex;
+    justify-content: flex-end; /* ボタンを右に寄せる */
+    align-items: center;
+    z-index: 9999; /* 最前面に表示 */
+}
+
+/* window-controls のスタイルを調整 */
+.window-controls {
+    position: relative; /* absoluteからrelativeに変更 */
+    top: auto;
+    left: auto;
+    height: auto;
+    display: flex;
+    align-items: center;
+    padding-right: 15px; /* 右側に少しパディング */
+    padding-top: 0; /* 上側に少しパディング */
+    padding-left: 0; /* 左側のパディングを削除 */
+    z-index: 10;
+}
+
+.window-control-btn {
+    background: none;
+    border: none;
+    color: #000;
+    font-size: 14px;
+    font-weight: bold;
+    padding: 0 5px;
+    cursor: pointer;
+    outline: none;
+    -webkit-app-region: no-drag;
+    width: 20px; /* ボタンの幅を固定 */
+    height: 20px; /* ボタンの高さを固定 */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.window-control-btn:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 3px;
+}
+
+.close-btn:hover {
+    color: red;
+}
+
+.minimize-btn:hover {
+    color: blue;
+}
+
+/* BlackテーマとU2テーマの場合、ウィンドウコントロールボタンのSVGアイコンを白にする */
+#ipod-pip-container .ipod-chassis.theme-black .window-control-btn,
+#ipod-pip-container .ipod-chassis.theme-u2 .window-control-btn {
+    color: #FFFFFF; /* ボタンの文字色を白に */
+}
+
+#ipod-pip-container .ipod-chassis.theme-black .window-control-btn:hover,
+#ipod-pip-container .ipod-chassis.theme-u2 .window-control-btn:hover {
+    background-color: rgba(255, 255, 255, 0.2); /* 明るい背景色に */
+}
+
+#ipod-pip-container .ipod-chassis.theme-black .window-control-btn svg rect,
+#ipod-pip-container .ipod-chassis.theme-black .window-control-btn svg path,
+#ipod-pip-container .ipod-pip-container .ipod-chassis.theme-u2 .window-control-btn svg rect,
+#ipod-pip-container .ipod-chassis.theme-u2 .window-control-btn svg path {
+    fill: #FFFFFF;
+}
