@@ -1,4 +1,15 @@
-const { SMTCMonitor } = require('@coooookies/windows-smtc-monitor');
+let SMTCMonitor;
+try {
+    const monitorModule = require('@coooookies/windows-smtc-monitor');
+    if (monitorModule) SMTCMonitor = monitorModule.SMTCMonitor;
+} catch (e) {
+    console.error("SMTCMonitor module not found or failed to load. This is expected on non-Windows platforms.");
+}
+
+if (!SMTCMonitor) {
+    console.log("SMTCMonitor is not available. Exiting worker.");
+    process.exit(0);
+}
 
 const monitor = new SMTCMonitor();
 

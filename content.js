@@ -43,14 +43,14 @@ const IPOD_HTML_INNER = `
                     <div class="ipod-info-side">
                         <div class="ipod-track-info">
                             <div class="ipod-text-title" id="ipod-title">Not Playing</div>
-                            <div class="ipod-text-artist" id="ipod-artist">Spotify</div>
+                            <div class="ipod-text-artist" id="ipod-artist"></div>
                             <div class="ipod-text-album" id="ipod-album"></div>
                         </div>
                     </div>
                 </div>
                 
                 <div class="ipod-progress-area">
-                    <div class="ipod-scrubber-bar">
+                    <div class="ipod-scrubber-bar" id="ipod-scrubber">
                         <div class="ipod-scrubber-fill" id="ipod-scrubber-fill" style="width: 0%"></div>
                     </div>
                     <div class="ipod-time-labels">
@@ -87,7 +87,7 @@ function injectStartButton() {
     btn.style.zIndex = '9999';
     btn.style.padding = '10px 20px';
     btn.style.borderRadius = '20px';
-    btn.style.backgroundColor = '#1db954';
+    btn.style.backgroundColor = '#666';
     btn.style.color = '#fff';
     btn.style.border = 'none';
     btn.style.fontWeight = 'bold';
@@ -119,11 +119,11 @@ async function startIpodMode() {
         ipodPiPWindow.document.body.appendChild(container);
 
         initIpodControls(ipodPiPWindow.document);
-        updateMetadata(ipodPiPWindow.document);
-        tryOpenSpotifyLyrics();
+        // Only trigger initial empty update to clear defaults
+        ipcRenderer.send('media-control', 'request-update');
 
-        ipodPiPWindow.addEventListener('pagehide', () => { 
-            ipodPiPWindow = null; 
+        ipodPiPWindow.addEventListener('pagehide', () => {
+            ipodPiPWindow = null;
             globalRenderMenu = null;
             globalIsMenuOpen = false;
         });
@@ -144,7 +144,7 @@ function initIpodControls(doc) {
     const lyricsHeader = doc.getElementById('ipod-lyrics-header-bar');
     const screen = doc.querySelector('.ipod-screen');
     const chassis = doc.getElementById('ipod-chassis');
-    
+
     const menuView = doc.getElementById('ipod-menu-view');
     const menuList = doc.getElementById('ipod-menu-list');
 
@@ -153,95 +153,10 @@ function initIpodControls(doc) {
     const themes = ['', 'theme-black', 'theme-u2'];
     const themeNames = ['Silver', 'Black', 'U2 (Black & Red)'];
 
-    function findVolumeSlider() {
-        let slider = document.querySelector('[data-testid="volume-bar"] input[type="range"]');
-        if (slider) return slider;
-
-        slider = document.querySelector('.volume-bar input[type="range"]');
-        if (slider) return slider;
-
-        const allRanges = document.querySelectorAll('input[type="range"]');
-        for (let r of allRanges) {
-            const label = (r.getAttribute('aria-label') || "").toLowerCase();
-            const valueText = (r.getAttribute('aria-valuetext') || "");
-            
-            if (label.includes('volume') || label.includes('音量')) return r;
-            
-            if (valueText.includes(':') && parseFloat(r.max) > 10) continue;
-            
-            if (parseFloat(r.max) === 1) return r;
-        }
-        return null;
-    }
-
-    function findControlBtn(testId, labelKeywords) {
-        const footer = document.querySelector('footer');
-        if (footer) {
-            const footerBtn = footer.querySelector(`button[data-testid="${testId}"]`);
-            if (footerBtn) return footerBtn;
-            
-            const footerBtns = footer.querySelectorAll('button[aria-label]');
-            for (let b of footerBtns) {
-                const label = (b.getAttribute('aria-label') || "").toLowerCase();
-                for (let kw of labelKeywords) {
-                    if (label.includes(kw.toLowerCase())) return b;
-                }
-            }
-        }
-        
-        let btn = document.querySelector(`button[data-testid="${testId}"]`);
-        if (btn) return btn;
-        
-        const allBtns = document.querySelectorAll('button[aria-label]');
-        for (let b of allBtns) {
-            const label = (b.getAttribute('aria-label') || "").toLowerCase();
-            for (let kw of labelKeywords) {
-                if (label.includes(kw.toLowerCase())) return b;
-            }
-        }
-        return null;
-    }
-
-    function getShuffleState() {
-        let btn = findControlBtn('control-button-shuffle', ['Shuffle', 'シャッフル']);
-        if (!btn) btn = findControlBtn('control-button-smart-shuffle', ['Smart Shuffle', 'スマート']);
-        
-        if (!btn) return 'Unknown';
-        
-        const checked = btn.getAttribute('aria-checked');
-        if (checked === 'true' || checked === 'mixed') return 'On';
-
-        const label = (btn.getAttribute('aria-label') || "");
-        if (label.includes('有効')) return 'Off';
-        if (label.includes('無効')) return 'On';
-        if (label.includes('Enable')) return 'Off';
-        if (label.includes('Disable')) return 'On';
-
-        return 'Off';
-    }
-
-    function getRepeatState() {
-        const btn = findControlBtn('control-button-repeat', ['Repeat', 'リピート']);
-        if (!btn) return 'Unknown';
-        
-        const checked = btn.getAttribute('aria-checked');
-        const label = (btn.getAttribute('aria-label') || "").toLowerCase();
-        
-        if (checked === 'true') {
-            if (label.includes('one') || label.includes('1') || label.includes('1曲')) return 'One';
-            return 'All';
-        } else if (checked === 'mixed') {
-            return 'On';
-        }
-        return 'Off';
-    }
-
-    globalRenderMenu = function() {
+    globalRenderMenu = function () {
         menuList.innerHTML = '';
         const menuItems = [
             { label: 'Now Playing', action: 'close' },
-            { label: `Shuffle: ${getShuffleState()}`, action: 'toggle_shuffle' },
-            { label: `Repeat: ${getRepeatState()}`, action: 'toggle_repeat' },
             { label: `Theme: ${themeNames[currentTheme]}`, action: 'cycle_theme' }
         ];
 
@@ -249,7 +164,7 @@ function initIpodControls(doc) {
             const li = doc.createElement('li');
             li.className = 'ipod-menu-item';
             if (index === menuIndex) li.classList.add('selected');
-            
+
             li.innerHTML = `<span>${item.label}</span><span class="ipod-menu-arrow">&gt;</span>`;
             li.onclick = () => {
                 menuIndex = index;
@@ -264,13 +179,6 @@ function initIpodControls(doc) {
     function executeMenu(action) {
         if (action === 'close') {
             toggleMenu();
-        } else if (action === 'toggle_shuffle') {
-            let btn = findControlBtn('control-button-shuffle', ['Shuffle', 'シャッフル']);
-            if (!btn) btn = findControlBtn('control-button-smart-shuffle', ['Smart Shuffle', 'スマート']);
-            if (btn) btn.click();
-        } else if (action === 'toggle_repeat') {
-            const btn = findControlBtn('control-button-repeat', ['Repeat', 'リピート']);
-            if (btn) btn.click();
         } else if (action === 'cycle_theme') {
             currentTheme = (currentTheme + 1) % themes.length;
             chassis.className = 'ipod-chassis ' + themes[currentTheme];
@@ -302,7 +210,6 @@ function initIpodControls(doc) {
                 coverContainer.style.visibility = 'hidden';
                 if (lyricsHeader) lyricsHeader.style.display = 'flex';
                 if (screen) screen.classList.add('lyrics-active');
-                tryOpenSpotifyLyrics();
             } else {
                 lyricsView.style.display = 'none';
                 coverContainer.style.visibility = 'visible';
@@ -314,23 +221,16 @@ function initIpodControls(doc) {
 
     const togglePlay = (e) => {
         e.stopPropagation();
-        let btn = document.querySelector('button[data-testid="control-button-playpause"]') ||
-                  document.querySelector('button[aria-label="Play"], button[aria-label="Pause"]') ||
-                  document.querySelector('button[aria-label="再生"], button[aria-label="一時停止"]');
-        if (btn) btn.click();
+        ipcRenderer.send('media-control', 'play-pause');
     };
 
     const nextTrack = (e) => {
         e.stopPropagation();
-        let btn = document.querySelector('button[data-testid="control-button-skip-forward"]') ||
-                  document.querySelector('button[aria-label="Next track"], button[aria-label="次の曲"]');
-        if (btn) btn.click();
+        ipcRenderer.send('media-control', 'next');
     };
     const prevTrack = (e) => {
         e.stopPropagation();
-        let btn = document.querySelector('button[data-testid="control-button-skip-back"]') ||
-                  document.querySelector('button[aria-label="Previous track"], button[aria-label="前の曲"]');
-        if (btn) btn.click();
+        ipcRenderer.send('media-control', 'prev');
     };
 
     if (playBtnLabel) playBtnLabel.onclick = togglePlay;
@@ -342,186 +242,21 @@ function initIpodControls(doc) {
         wheel.addEventListener('wheel', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            const delta = Math.sign(e.deltaY); 
-            
+            const delta = Math.sign(e.deltaY);
+
             if (globalIsMenuOpen) {
                 const currentItems = globalRenderMenu();
-                if (delta > 0) { 
+                if (delta > 0) {
                     if (menuIndex < currentItems.length - 1) menuIndex++;
-                } else { 
+                } else {
                     if (menuIndex > 0) menuIndex--;
                 }
                 globalRenderMenu();
             } else {
-                const volInput = findVolumeSlider();
-                if (volInput) {
-                    const d = delta * -1;
-                    let currentVal = parseFloat(volInput.value);
-                    const maxVal = parseFloat(volInput.max) || 1; 
-                    const step = parseFloat(volInput.step) || 0.1; 
-                    
-                    let newVal = currentVal + (d * step);
-                    newVal = Math.round(newVal * 100) / 100;
-
-                    if (newVal > maxVal) newVal = maxVal;
-                    if (newVal < 0) newVal = 0;
-                    
-                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-                    nativeInputValueSetter.call(volInput, newVal);
-                    
-                    volInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    volInput.dispatchEvent(new Event('change', { bubbles: true }));
-                }
+                ipcRenderer.send('media-control', delta > 0 ? 'volume-down' : 'volume-up');
             }
         });
     }
-}
-
-function tryOpenSpotifyLyrics() {
-    const selectors = ['button[data-testid="lyrics-button"]', 'button[aria-label="Lyrics"]', 'button[aria-label="歌詞"]', 'button[title="Lyrics"]', 'button[title="歌詞"]'];
-    let btn = null;
-    for (let sel of selectors) {
-        btn = document.querySelector(sel);
-        if (btn) break;
-    }
-    if (btn) {
-        const isAriaChecked = btn.getAttribute('aria-checked') === 'true';
-        const isDataActive = btn.getAttribute('data-active') === 'true';
-        const hasActiveClass = btn.className.includes('active') || btn.className.includes('Active');
-        const style = window.getComputedStyle(btn);
-        const color = style.color || style.fill;
-        const isGreen = color.includes('29, 185, 84') || color.includes('1db954');
-        if (isAriaChecked || isDataActive || hasActiveClass || isGreen) return;
-        const existingContainer = document.querySelector('[data-testid="lyrics-container"]');
-        if (existingContainer && existingContainer.offsetParent !== null) return;
-        btn.click();
-    }
-}
-
-function parseTimeStr(str) {
-    if (!str) return 0;
-    const parts = str.split(':');
-    if (parts.length === 2) return parseInt(parts[0]) * 60 + parseInt(parts[1]);
-    if (parts.length === 3) return parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseInt(parts[2]);
-    return 0;
-}
-
-let lastTrackTitle = "";
-function updateMetadata(doc) {
-    if (!ipodPiPWindow) return;
-
-    if (globalIsMenuOpen && globalRenderMenu) {
-        globalRenderMenu();
-    }
-
-    let currentTitle = "Unknown Title";
-    if (navigator.mediaSession && navigator.mediaSession.metadata) {
-        const meta = navigator.mediaSession.metadata;
-        const titleEl = doc.getElementById('ipod-title');
-        const artistEl = doc.getElementById('ipod-artist');
-        const albumEl = doc.getElementById('ipod-album');
-        const coverImg = doc.getElementById('ipod-cover-img');
-        const coverPlaceholder = doc.querySelector('.ipod-cover-placeholder');
-        const lyricsHeaderTitle = doc.getElementById('ipod-lyrics-header-title');
-        const lyricsHeaderArtist = doc.getElementById('ipod-lyrics-header-artist');
-        const lyricsBg = doc.getElementById('ipod-lyrics-bg');
-
-        currentTitle = meta.title || "Unknown Title";
-        const currentArtist = meta.artist || "Unknown Artist";
-
-        if (lastTrackTitle !== currentTitle) {
-            lastTrackTitle = currentTitle;
-            const lyricsContent = doc.getElementById('ipod-lyrics-content');
-            if (lyricsContent) lyricsContent.innerHTML = '<div style="margin-top: 50%; color: rgba(255,255,255,0.5);">Loading...</div>';
-            const lyricsView = doc.getElementById('ipod-lyrics-view');
-            if (lyricsView) lyricsView.setAttribute('data-signature', '');
-        }
-
-        if (titleEl) titleEl.textContent = currentTitle;
-        if (artistEl) artistEl.textContent = currentArtist;
-        if (albumEl) albumEl.textContent = meta.album || "";
-        if (lyricsHeaderTitle) lyricsHeaderTitle.textContent = currentTitle;
-        if (lyricsHeaderArtist) lyricsHeaderArtist.textContent = currentArtist;
-
-        if (meta.artwork && meta.artwork.length > 0) {
-            const bestArt = meta.artwork.reduce((prev, current) => {
-                return (parseInt(prev.sizes?.split('x')[0] || 0) > parseInt(current.sizes?.split('x')[0] || 0)) ? prev : current;
-            });
-            if (bestArt.src && coverImg.src !== bestArt.src) {
-                coverImg.src = bestArt.src;
-                coverImg.style.display = 'block';
-                if (coverPlaceholder) coverPlaceholder.style.display = 'none';
-                if (lyricsBg) lyricsBg.style.backgroundImage = `url('${bestArt.src}')`;
-            }
-        }
-    }
-
-    const lyricsView = doc.getElementById('ipod-lyrics-view');
-    const lyricsContent = doc.getElementById('ipod-lyrics-content');
-    if (lyricsView && getComputedStyle(lyricsView).display !== 'none' && lyricsContent) {
-        const selectorQuery = ['[data-testid="lyric"]', '[data-testid="lyrics-line"]', '.lyrics-lyricsContent-lyric', 'div[class*="Lyrics__Line"]', 'div[class*="Lyrics-sc-"]', '.EnORM'].join(', ');
-        const allSourceLines = document.querySelectorAll(selectorQuery);
-        const validLines = Array.from(allSourceLines).filter(el => el.offsetParent !== null && el.innerText.trim().length > 0);
-
-        if (validLines.length > 0) {
-            const currentSignature = validLines.map(el => el.innerText).join('').length;
-            const prevSignature = lyricsView.getAttribute('data-signature');
-            if (currentSignature != prevSignature) {
-                lyricsView.setAttribute('data-signature', currentSignature);
-                lyricsContent.innerHTML = ''; 
-                validLines.forEach((line, index) => {
-                    const p = document.createElement('div');
-                    p.className = 'ipod-lyric-line';
-                    p.innerText = line.innerText;
-                    p.id = `pip-lyric-${index}`;
-                    lyricsContent.appendChild(p);
-                });
-            }
-            validLines.forEach((line, index) => {
-                const pipLine = doc.getElementById(`pip-lyric-${index}`);
-                if (!pipLine) return;
-                const style = window.getComputedStyle(line);
-                const isActive = line.classList.contains('lyrics-lyricsContent-active') || line.getAttribute('data-active') === 'true' || style.color === 'rgb(255, 255, 255)' || (line.style.color === 'white');
-                if (isActive) {
-                    if (!pipLine.classList.contains('active')) {
-                        const currents = lyricsContent.querySelectorAll('.active');
-                        currents.forEach(c => c.classList.remove('active'));
-                        pipLine.classList.add('active');
-                        const containerH = lyricsContent.clientHeight;
-                        const elemTop = pipLine.offsetTop;
-                        const elemH = pipLine.offsetHeight;
-                        const offset = 50; 
-                        lyricsContent.scrollTo({
-                            top: elemTop - (containerH / 2) + (elemH / 2) + offset,
-                            behavior: 'smooth'
-                        });
-                    }
-                }
-            });
-        }
-    }
-
-    const progressEl = document.querySelector('[data-testid="playback-position"]');
-    const durationEl = document.querySelector('[data-testid="playback-duration"]');
-    let currentStr = "0:00"; let totalStr = "-:--"; let progressPercent = 0;
-    if (progressEl) currentStr = progressEl.textContent;
-    if (durationEl) totalStr = durationEl.textContent;
-    const curSec = parseTimeStr(currentStr);
-    const totalSec = parseTimeStr(totalStr);
-    if (totalSec > 0) progressPercent = (curSec / totalSec) * 100;
-    const timeCurrentEl = doc.getElementById('ipod-time-current');
-    const timeTotalEl = doc.getElementById('ipod-time-total');
-    const scrubberFill = doc.getElementById('ipod-scrubber-fill');
-    if (timeCurrentEl) timeCurrentEl.textContent = currentStr;
-    if (timeTotalEl) timeTotalEl.textContent = totalStr;
-    if (scrubberFill) scrubberFill.style.width = `${progressPercent}%`;
-
-    const timeDisplay = doc.getElementById('ipod-time-display');
-    if (timeDisplay) {
-        const now = new Date();
-        timeDisplay.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-    requestAnimationFrame(() => updateMetadata(doc));
 }
 
 setInterval(injectStartButton, 2000);

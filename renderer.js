@@ -4,11 +4,8 @@ let globalRenderMenu = null;
 let globalIsMenuOpen = false;
 let lastTrackTitle = "";
 
-// メインプロセスからメディア情報を受信したときにUIを更新
-ipcRenderer.on('media-update', (event, mediaInfo) => {
-    console.log("Received media-update from main process:", mediaInfo); // 追加
-    updateMetadata(document, mediaInfo);
-});
+// メインプロセスからメディア情報を受信したときにUIを更新できるように、ipcRenderer経由で最新情報を保持する。
+// 実際の描画はrequestAnimationFrameのループ(updateMetadata)内で行われる。
 
 document.addEventListener('DOMContentLoaded', () => {
     initIpodControls(document);
@@ -46,7 +43,7 @@ function initIpodControls(doc) {
     const lyricsHeader = doc.getElementById('ipod-lyrics-header-bar');
     const screen = doc.querySelector('.ipod-screen');
     const chassis = doc.getElementById('ipod-chassis');
-    
+
     const menuView = doc.getElementById('ipod-menu-view');
     const menuList = doc.getElementById('ipod-menu-list');
 
@@ -75,7 +72,7 @@ function initIpodControls(doc) {
     }
     // --- ここまで ---
 
-    globalRenderMenu = function() {
+    globalRenderMenu = function () {
         menuList.innerHTML = '';
         const menuItems = [
             { label: 'Now Playing', action: 'close' },
@@ -88,7 +85,7 @@ function initIpodControls(doc) {
             const li = doc.createElement('li');
             li.className = 'ipod-menu-item';
             if (index === menuIndex) li.classList.add('selected');
-            
+
             li.innerHTML = `<span>${item.label}</span><span class="ipod-menu-arrow">&gt;</span>`;
             li.onclick = () => {
                 menuIndex = index;
@@ -150,38 +147,60 @@ function initIpodControls(doc) {
     };
 
     const togglePlay = (e) => {
-        e.stopPropagation();
-        console.log("Toggle Play/Pause (not implemented for native app yet)");
-        // ネイティブAPI経由で再生/一時停止を切り替えるロジックを後で追加
+        if (e) e.stopPropagation();
+        console.log("Renderer: Sending play-pause command");
+        ipcRenderer.send('media-control', 'play-pause');
     };
 
     const nextTrack = (e) => {
-        e.stopPropagation();
-        console.log("Next Track (not implemented for native app yet)");
-        // ネイティブAPI経由で次のトラックを再生するロジックを後で追加
+        if (e) e.stopPropagation();
+        console.log("Renderer: Sending next command");
+        ipcRenderer.send('media-control', 'next');
     };
     const prevTrack = (e) => {
-        e.stopPropagation();
-        console.log("Previous Track (not implemented for native app yet)");
-        // ネイティブAPI経由で前のトラックを再生するロジックを後で追加
+        if (e) e.stopPropagation();
+        console.log("Renderer: Sending prev command");
+        ipcRenderer.send('media-control', 'prev');
     };
 
+    const seekTo = (percent) => {
+        if (totalDuration > 0) {
+            const time = (percent / 100) * totalDuration;
+            console.log(`Renderer: Sending seek command to ${time}s`);
+            ipcRenderer.send('media-control', 'seek', time);
+        }
+    };
+
+    const nextBtnLabel = doc.querySelector('.label-next');
+    const prevBtnLabel = doc.querySelector('.label-prev');
+
     if (playBtnLabel) playBtnLabel.onclick = togglePlay;
-    if (nextBtn) nextBtn.onclick = nextTrack;
-    if (prevBtn) prevTrack.onclick = prevTrack;
+    if (nextBtnLabel) nextBtnLabel.onclick = nextTrack;
+    if (prevBtnLabel) prevBtnLabel.onclick = prevTrack;
+
+    // スクラバーでのシーク
+    const scrubber = doc.getElementById('ipod-scrubber');
+    if (scrubber) {
+        scrubber.onclick = (e) => {
+            const rect = scrubber.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const percent = (x / rect.width) * 100;
+            seekTo(percent);
+        };
+    }
 
     const wheel = doc.getElementById('ipod-wheel');
     if (wheel) {
         wheel.addEventListener('wheel', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            const delta = Math.sign(e.deltaY); 
-            
+            const delta = Math.sign(e.deltaY);
+
             if (globalIsMenuOpen) {
                 const currentItems = globalRenderMenu();
-                if (delta > 0) { 
+                if (delta > 0) {
                     if (menuIndex < currentItems.length - 1) menuIndex++;
-                } else { 
+                } else {
                     if (menuIndex > 0) menuIndex--;
                 }
                 globalRenderMenu();
@@ -226,16 +245,25 @@ function updateMetadata(doc, mediaInfo) { // mediaInfo引数を追加
         currentTitle = mediaInfo.title || "Unknown Title";
         currentArtist = mediaInfo.artist || "Unknown Artist";
         currentAlbum = mediaInfo.album || "";
-        
+
         // mediaInfo.artwork が { type: 'Buffer', data: [Array] } の形式で渡されるため、Bufferを再構築
         if (mediaInfo.artwork && mediaInfo.artwork.type === 'Buffer' && Array.isArray(mediaInfo.artwork.data)) {
             const artworkBuffer = Buffer.from(mediaInfo.artwork.data);
-            artworkSrc = `data:image/png;base64,${artworkBuffer.toString('base64')}`;
+            const mime = mediaInfo.artworkMIME || "image/png";
+            artworkSrc = `data:${mime};base64,${artworkBuffer.toString('base64')}`;
         } else {
             artworkSrc = "";
         }
         currentPosition = mediaInfo.position || 0;
         totalDuration = mediaInfo.duration || 0;
+
+        // 再生中の場合は、最後に情報を受け取ってからの経過時間を加算して補完する
+        if (mediaInfo.playbackStatus === 1 && mediaInfo.timestamp) {
+            const now = Date.now() / 1000;
+            const elapsedSinceUpdate = now - mediaInfo.timestamp;
+            // 経過時間を加算 (durationを超えないように制限)
+            currentPosition = Math.min(totalDuration, currentPosition + elapsedSinceUpdate);
+        }
     }
 
     if (lastTrackTitle !== currentTitle) {
@@ -247,25 +275,23 @@ function updateMetadata(doc, mediaInfo) { // mediaInfo引数を追加
     }
 
     if (titleEl) titleEl.textContent = currentTitle;
-    if (artistEl) artistEl.textContent = currentArtist;
-    if (albumEl) albumEl.textContent = currentAlbum;
+    if (artistEl) artistEl.textContent = currentArtist || ""; // 空の場合はクリア
+    if (albumEl) albumEl.textContent = currentAlbum || "";
     if (lyricsHeaderTitle) lyricsHeaderTitle.textContent = currentTitle;
-    if (lyricsHeaderArtist) lyricsHeaderArtist.textContent = currentArtist;
+    if (lyricsHeaderArtist) lyricsHeaderArtist.textContent = currentArtist || "";
 
     if (artworkSrc) {
-        console.log("Renderer: artworkSrc generated:", artworkSrc.substring(0, 100) + "..."); // 長いので一部のみ
-        if (coverImg.src !== artworkSrc) {
+        if (coverImg && coverImg.src !== artworkSrc) {
             coverImg.src = artworkSrc;
             coverImg.style.display = 'block';
             if (coverPlaceholder) coverPlaceholder.style.display = 'none';
             if (lyricsBg) lyricsBg.style.backgroundImage = `url('${artworkSrc}')`;
-            console.log("Renderer: coverImg.src updated to:", coverImg.src.substring(0, 100) + "...");
-        } else {
-            console.log("Renderer: coverImg.src is already up-to-date.");
         }
     } else {
-        console.log("Renderer: artworkSrc is empty.");
-        coverImg.style.display = 'none';
+        if (coverImg) {
+            coverImg.src = "";
+            coverImg.style.display = 'none';
+        }
         if (coverPlaceholder) coverPlaceholder.style.display = 'flex';
         if (lyricsBg) lyricsBg.style.backgroundImage = 'none';
     }
@@ -275,7 +301,7 @@ function updateMetadata(doc, mediaInfo) { // mediaInfo引数を追加
     if (lyricsView && getComputedStyle(lyricsView).display !== 'none' && lyricsContent) {
         // 歌詞表示ロジックは、後でネイティブAPIから歌詞を取得するように修正
         // 現時点ではダミー
-        const validLines = []; 
+        const validLines = [];
         if (validLines.length > 0) {
             // ... 既存の歌詞表示ロジック ...
         }
@@ -303,6 +329,23 @@ function updateMetadata(doc, mediaInfo) { // mediaInfo引数を追加
         const now = new Date();
         timeDisplay.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
-    // requestAnimationFrameは不要。メディア情報が更新されたときにのみUIを更新する
-    // requestAnimationFrame(() => updateMetadata(doc));
+
+    // Smoothly interpolate position if playing
+    if (lastMediaInfo && lastMediaInfo.playbackStatus === 1 && lastMediaInfo.timestamp) {
+        const now = Date.now() / 1000;
+        const elapsed = now - lastMediaInfo.timestamp;
+        const pos = Math.min(lastMediaInfo.duration, (lastMediaInfo.position || 0) + elapsed);
+
+        if (timeCurrentEl) timeCurrentEl.textContent = formatTime(pos);
+        if (scrubberFill && lastMediaInfo.duration > 0) {
+            scrubberFill.style.width = `${(pos / lastMediaInfo.duration) * 100}%`;
+        }
+    }
+
+    requestAnimationFrame(() => updateMetadata(doc, lastMediaInfo));
 }
+
+let lastMediaInfo = null;
+ipcRenderer.on('media-update', (event, mediaInfo) => {
+    lastMediaInfo = mediaInfo;
+});

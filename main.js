@@ -24,31 +24,42 @@ function createWindow() {
     // 開発ツールを開く (任意)
     // mainWindow.webContents.openDevTools({ mode: 'detach' });
 
-    // SMTCMonitor Workerを起動
-    const smtcWorker = fork(path.join(__dirname, 'smtc-worker.js'));
+    // プラットフォーム固有のWorkerを起動
+    let mediaWorker;
+    if (process.platform === 'win32') {
+        mediaWorker = fork(path.join(__dirname, 'smtc-worker.js'));
+    } else if (process.platform === 'darwin') {
+        mediaWorker = fork(path.join(__dirname, 'macos-media-worker.js'));
+    }
 
-    smtcWorker.on('message', (message) => {
-        console.log("Received message from SMTCMonitor Worker:", message); // 追加
-        if (message.type === 'media-update') {
-            // Workerから受け取ったメディア情報をレンダラープロセスに送信
-            mainWindow.webContents.send('media-update', message.payload);
-        }
-    });
+    if (mediaWorker) {
+        mediaWorker.on('message', (message) => {
+            console.log("Received message from Media Worker:", message);
+            if (message.type === 'media-update') {
+                mainWindow.webContents.send('media-update', message.payload);
+            }
+        });
 
-    smtcWorker.on('error', (error) => {
-        console.error("SMTCMonitor Worker error:", error);
-    });
+        mediaWorker.on('error', (error) => {
+            console.error("Media Worker error:", error);
+        });
 
-    smtcWorker.on('exit', (code) => {
-        if (code !== 0) {
-            console.error(`SMTCMonitor Worker stopped with exit code ${code}`);
-        }
-    });
+        mediaWorker.on('exit', (code) => {
+            if (code !== 0) {
+                console.error(`Media Worker stopped with exit code ${code}`);
+            }
+        });
 
-    // ウィンドウが閉じられたときにWorkerを終了
-    mainWindow.on('closed', () => {
-        smtcWorker.kill();
-    });
+        // 終了時にWorkerをクリーンアップ
+        mainWindow.on('closed', () => {
+            mediaWorker.kill();
+        });
+
+        // メディア操作のIPCイベント
+        ipcMain.on('media-control', (event, action) => {
+            mediaWorker.send({ type: 'control', action });
+        });
+    }
 
     // レンダラープロセスからのIPCイベントを処理
     ipcMain.on('minimize-window', () => {
