@@ -3,59 +3,87 @@ const path = require('path');
 
 const SWIFT_MONITOR_PATH = path.join(__dirname, 'nowplaying_monitor.swift');
 
-function runSwiftMonitor() {
+function runAppleScriptMonitor() {
     return new Promise((resolve) => {
-        // Use swift command but suppress warnings to stderr
-        exec(`swift "${SWIFT_MONITOR_PATH}"`, (error, stdout, stderr) => {
+        // AppleScript経由でメディア情報を取得
+        exec(`osascript -e 'tell application "Music" to if player state is playing then artist & "\t" & name & "\t" & album & "\t" & duration & "\t" & player position & "\t" & "playing" else if player state is paused then artist & "\t" & name & "\t" & album & "\t" & duration & "\t" & player position & "\t" & "paused" else "" end if' 2>/dev/null`, (error, stdout, stderr) => {
             if (error) {
-                console.error("Swift monitor execution error:", stderr || error);
-                resolve(null);
-                return;
-            }
-
-            const fullOutput = stdout.trim();
-            const startIdx = fullOutput.indexOf('JSON_START');
-            const endIdx = fullOutput.indexOf('JSON_END');
-
-            if (startIdx === -1 || endIdx === -1) {
-                resolve(null);
-                return;
-            }
-
-            const output = fullOutput.substring(startIdx + 10, endIdx).trim();
-            try {
-                const data = JSON.parse(output);
-                if (!data.title && !data.artist) {
-                    resolve(null);
-                    return;
-                }
-                resolve({
-                    title: data.title || "Unknown Title",
-                    artist: data.artist || "",
-                    album: data.album || "",
-                    duration: data.duration || 0,
-                    position: data.elapsedTime || 0,
-                    playbackStatus: data.playbackState === 1 ? 1 : 2, // 1: Playing, 2: Paused
-                    artwork: data.artworkBase64 ? Buffer.from(data.artworkBase64, 'base64') : null,
-                    artworkMIME: data.artworkMIME || 'image/png',
-                    timestamp: data.timestamp || Date.now() / 1000
+                // Musicアプリがない場合、他のアプリを試す
+                exec(`osascript -e 'tell application "Spotify" to if player state is playing then artist & "\t" & name & "\t" & album & "\t" & duration & "\t" & player position & "\t" & "playing" else if player state is paused then artist & "\t" & name & "\t" & album & "\t" & duration & "\t" & player position & "\t" & "paused" else "" end if' 2>/dev/null`, (error, stdout, stderr) => {
+                    if (error || -z "$stdout") {
+                        console.log("No supported media player found");
+                        resolve(null);
+                        return;
+                    }
+                    parseAppleScriptOutput(stdout, resolve);
                 });
-            } catch (e) {
-                console.error("Parse error in Worker:", e.message, "Output was:", output.substring(0, 100) + "...");
-                resolve(null);
+                return;
             }
+            parseAppleScriptOutput(stdout, resolve);
         });
     });
 }
 
+function parseAppleScriptOutput(stdout, resolve) {
+    if (!stdout) {
+        resolve(null);
+        return;
+    }
+
+    const parts = stdout.trim().split('\t');
+    if (parts.length < 2) {
+        resolve(null);
+        return;
+    }
+
+    const [artist, title, album, duration, position, playback_status] = parts;
+    if (!artist || !title) {
+        resolve(null);
+        return;
+    }
+
+    const durationSeconds = duration ? parseTimeStr(duration) : 0;
+    const positionSeconds = position ? parseTimeStr(position) : 0;
+    const playbackStatus = playback_status === 'playing' ? 1 : 2;
+    const timestamp = Date.now() / 1000;
+
+    resolve({
+        title: title || "Unknown Title",
+        artist: artist || "",
+        album: album || "",
+        duration: durationSeconds,
+        position: positionSeconds,
+        playbackStatus: playbackStatus,
+        artwork: null,
+        artworkMIME: 'image/png',
+        timestamp: timestamp
+    });
+}
+
 async function controlMedia(action, value) {
-    console.log(`Native control attempt: action=${action}, value=${value}`);
-    let arg = action;
-    if (action === 'seek') arg = `seek ${value}`;
+    console.log(`AppleScript control attempt: action=${action}, value=${value}`);
+    let script = "tell application \"Music\" to return name";
+
+    switch (action) {
+        case 'play-pause':
+            script = "tell application \"Music\" to playpause";
+            break;
+        case 'next':
+            script = "tell application \"Music\" to next track";
+            break;
+        case 'prev':
+            script = "tell application \"Music\" to previous track";
+            break;
+        case 'seek':
+            if (value) {
+                script = `tell application \"Music\" to set player position to ${value}`;
+            }
+            break;
+    }
 
     return new Promise((resolve) => {
-        exec(`swift "${SWIFT_MONITOR_PATH}" ${arg}`, (error, stdout, stderr) => {
-            if (error) console.error("Native control error:", stderr || error);
+        exec(`osascript -e '${script}'`, (error, stdout, stderr) => {
+            if (error) console.error("AppleScript control error:", stderr || error);
             resolve();
         });
     });
@@ -64,16 +92,16 @@ async function controlMedia(action, value) {
 process.on('message', async (message) => {
     if (message.type === 'control') {
         await controlMedia(message.action, message.value);
-        const info = await runSwiftMonitor();
+        const info = await runAppleScriptMonitor();
         if (info) process.send({ type: 'media-update', payload: info });
     }
 });
 
 setInterval(async () => {
-    const info = await runSwiftMonitor();
+    const info = await runAppleScriptMonitor();
     if (info) {
         process.send({ type: 'media-update', payload: info });
     }
 }, 1000);
 
-console.log("MacOS Media Worker (Pure Native Script) started.");
+console.log("MacOS Media Worker (AppleScript) started.");

@@ -10,9 +10,9 @@ function createWindow() {
         height: 520,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
-            nodeIntegration: true,
-            contextIsolation: false,
-            enableRemoteModule: true, // 追加
+            nodeIntegration: false,
+            contextIsolation: true,
+            enableRemoteModule: false,
         },
         frame: false,
         transparent: true,
@@ -30,6 +30,8 @@ function createWindow() {
         mediaWorker = fork(path.join(__dirname, 'smtc-worker.js'));
     } else if (process.platform === 'darwin') {
         mediaWorker = fork(path.join(__dirname, 'macos-media-worker.js'));
+    } else if (process.platform === 'linux') {
+        mediaWorker = fork(path.join(__dirname, 'linux-media-worker.js'));
     }
 
     if (mediaWorker) {
@@ -57,7 +59,9 @@ function createWindow() {
 
         // メディア操作のIPCイベント
         ipcMain.on('media-control', (event, action) => {
-            mediaWorker.send({ type: 'control', action });
+            if (mediaWorker) {
+                mediaWorker.send({ type: 'control', action });
+            }
         });
     }
 

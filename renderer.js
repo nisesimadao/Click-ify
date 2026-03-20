@@ -64,11 +64,11 @@ function initIpodControls(doc) {
     }
 
     function getShuffleState() {
-        return 'Unknown'; // プレースホルダー
+        return 'Off'; // プレースホルダー
     }
 
     function getRepeatState() {
-        return 'Unknown'; // プレースホルダー
+        return 'Off'; // プレースホルダー
     }
     // --- ここまで ---
 
@@ -187,6 +187,25 @@ function initIpodControls(doc) {
             const percent = (x / rect.width) * 100;
             seekTo(percent);
         };
+
+        // スクラバーのドラッグ機能を追加
+        let isDragging = false;
+        scrubber.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            const rect = scrubber.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
+            seekTo(percent);
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
     }
 
     const wheel = doc.getElementById('ipod-wheel');
@@ -205,7 +224,7 @@ function initIpodControls(doc) {
                 }
                 globalRenderMenu();
             } else {
-                console.log("Volume control via wheel (not implemented for native app yet)");
+                console.log("Volume control via wheel (placeholder)");
                 // ネイティブAPI経由で音量を調整するロジックを後で追加
             }
         });
@@ -342,7 +361,10 @@ function updateMetadata(doc, mediaInfo) { // mediaInfo引数を追加
         }
     }
 
-    requestAnimationFrame(() => updateMetadata(doc, lastMediaInfo));
+    if (lastMediaInfo && lastMediaInfo.playbackStatus === 1) {
+        // 再生中のみアニメーションループを継続
+        requestAnimationFrame(() => updateMetadata(doc, lastMediaInfo));
+    }
 }
 
 let lastMediaInfo = null;
